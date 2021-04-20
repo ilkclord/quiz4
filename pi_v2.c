@@ -87,7 +87,7 @@ typedef struct __threadtask {
 typedef struct __jobqueue { // circular linked list
     threadtask_t *head, *tail;
     pthread_cond_t cond_nonempty;
-    int busy ;  
+    int busy ; // the state of jobqueue  
     pthread_mutex_t rwlock;
     struct __jobqueue * next ; // specific queue for each worker
 } jobqueue_t;
@@ -169,7 +169,7 @@ static jobqueue_t *jobqueue_create(void)
         jobqueue->head = jobqueue->tail = NULL;
         pthread_cond_init(&jobqueue->cond_nonempty, NULL);
         pthread_mutex_init(&jobqueue->rwlock, NULL);
-        jobqueue->busy = REST ;
+        jobqueue->busy = REST ;// initialized the state
     }
     return jobqueue;
 }
@@ -220,8 +220,8 @@ static void *jobqueue_fetch(void *queue)
         while (!jobqueue->tail) pthread_cond_wait(&jobqueue->cond_nonempty, &jobqueue->rwlock) ;
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &old_state);
         is_busy[w_id]++ ;
-        printf("Busy state : %u %u %u %u , In queue : %u\n",is_busy[0] , is_busy[1] ,is_busy[2] , is_busy[3] , 1) ;
-        jobqueue->busy = BUSY ;
+        printf("Busy state : %u %u %u %u \n",is_busy[0] , is_busy[1] ,is_busy[2] , is_busy[3]) ;
+        jobqueue->busy = BUSY ;// upadate the state
         if (jobqueue->head == jobqueue->tail) {
             task = jobqueue->tail;
             jobqueue->head = jobqueue->tail = NULL;
@@ -234,7 +234,7 @@ static void *jobqueue_fetch(void *queue)
             tmp->next = NULL;
             jobqueue->tail = tmp;
         }
-        jobqueue->busy = REST ;
+        jobqueue->busy = REST ;// update the state
         pthread_mutex_unlock(&jobqueue->rwlock);
         if (task->func) {
             pthread_mutex_lock(&task->future->mutex);
@@ -287,7 +287,7 @@ struct __threadpool *tpool_create(size_t count)
         return NULL;
     }
     jobqueue_t * tmp = head ; 
-    for(int i = 1;i <worker_c ;i++){
+    for(int i = 1;i <worker_c ;i++){ // create the circular linked jobqueue
         jobqueue_t * new = jobqueue_create();
         if(!new){
           for(int j = i ; j > 0 ;j--){
@@ -348,6 +348,9 @@ struct __tpool_future *tpool_apply(struct __threadpool *pool,
             }
         }
         else{
+          /* 
+           for the end of the program send the specific queue to let the job_fetch terminate
+           * */
           for(int i = 0 ; i < id ; i++)
             jobqueue = jobqueue->next ;
         }
@@ -382,7 +385,7 @@ int tpool_join(struct __threadpool *pool)
     free(pool->workers);
     jobqueue_t * head = pool->jobqueue ;
     jobqueue_t * tmp  ;
-    for(int i = 0 ;  i < worker_c ; i++){
+    for(int i = 0 ;  i < worker_c ; i++){// release the queue list
       tmp = head->next;
       jobqueue_destroy(head);
       head = tmp ;
